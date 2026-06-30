@@ -20,32 +20,52 @@ A robust command-line tool for synchronizing and optimizing PDF files with Googl
 - [Ghostscript](https://ghostscript.com/) for PDF compression
 - Bash 4.0+ or Zsh
 - Optional: `bc` for precise calculations, `jq` for JSON parsing
+- `make` (for installation)
 
 ### Quick Install
 
 ```bash
 git clone https://github.com/yourusername/drive-sync.git
 cd drive-sync
-./drive-sync.sh setup
+make install
 ```
+
+This installs the `drive-sync` command to `~/.local/bin/`.
+
+**Important:** Make sure `~/.local/bin` is in your PATH. Add this to your `~/.bashrc` or `~/.zshrc` if not already:
+
+```bash
+export PATH="$PATH:$HOME/.local/bin"
+```
+
+### Uninstall
+
+```bash
+make uninstall
+```
+
+This removes the `drive-sync` command from `~/.local/bin/`.
 
 ### Manual Setup
 
+If you prefer not to use make:
+
 1. Clone the repository
-2. Make scripts executable: `chmod +x drive-sync.sh lib/*.sh`
+2. Make scripts executable: `chmod +x drive_sync.sh lib/*.sh`
 3. Configure rclone: `rclone config`
 4. Set up remote name in `config/settings.conf`
+5. Run directly: `./drive_sync.sh sync`
 
 ## Usage
 
 ### Basic Commands
 
 ```bash
-./drive-sync.sh sync          # Sync and compress PDFs
-./drive-sync.sh status        # Show current status
-./drive-sync.sh ratelimit     # Manual rate limit recovery
-./drive-sync.sh logs          # View logs
-./drive-sync.sh help          # Show help
+drive-sync sync          # Sync and compress PDFs
+drive-sync status        # Show current status
+drive-sync ratelimit     # Manual rate limit recovery
+drive-sync logs          # View logs
+drive-sync help          # Show help
 ```
 
 ### Sync Process
@@ -93,14 +113,14 @@ log_retention_days=30
 
 The tool consists of 9 modular components:
 
-1. **`drive-sync.sh`** - Main entry point
+1. **`drive_sync.sh`** - Main entry point
 2. **`lib/cli.sh`** - Command-line interface and formatting
-3. **`lib/sync.sh`** - Core sync logic
+3. **`lib/sync_ops.sh`** - Core sync logic
 4. **`lib/compression.sh`** - PDF compression with binary size formatting
 5. **`lib/storage.sh`** - Storage quota display (binary units)
-6. **`lib/ratelimit.sh`** - Rate limit handling
+6. **`lib/limit.sh`** - Rate limit handling
 7. **`lib/logging.sh`** - Logging with rotation
-8. **`lib/lock.sh`** - File locking for concurrent runs
+8. **`lib/state.sh`** - File locking for concurrent runs
 9. **`lib/utils.sh`** - Utility functions including decimal formatting
 
 ## Size Formatting
@@ -127,22 +147,30 @@ When Google Drive rate limits are encountered:
 
 ### Common Issues
 
+**"drive-sync: command not found"**
+- Make sure `~/.local/bin` is in your PATH
+- Run: `export PATH="$PATH:$HOME/.local/bin"` or add to shell config
+
 **"rclone not found"**
 - Install rclone: `curl https://rclone.org/install.sh | sudo bash`
 
 **"gs not found"**
-- Install Ghostscript: `sudo apt install ghostscript` (Ubuntu/Debian) or `brew install ghostscript` (macOS)
+- Install Ghostscript:
+  - Ubuntu/Debian: `sudo apt install ghostscript`
+  - macOS: `brew install ghostscript`
 
-**Permission denied**
-- Make scripts executable: `chmod +x drive-sync.sh lib/*.sh`
+**"Permission denied"**
+- Make scripts executable: `chmod +x drive_sync.sh lib/*.sh`
 
 **"bc not found"**
-- Install bc: `sudo apt install bc` (Ubuntu/Debian) or `brew install bc` (macOS)
+- Install bc:
+  - Ubuntu/Debian: `sudo apt install bc`
+  - macOS: `brew install bc`
 
 ### Manual Rate Limit Recovery
 
 ```bash
-./drive-sync.sh ratelimit
+drive-sync ratelimit
 ```
 
 ## Contributing
