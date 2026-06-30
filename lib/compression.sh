@@ -18,23 +18,38 @@
 }
 
 #=============================================================================
-# Formatting Helpers (decimal units)
+# Formatting Helpers
 #=============================================================================
 
-_format_bytes_decimal() {
+format_size() {
     local bytes="$1"
     local unit="B"
     local value="$bytes"
 
-    if [[ $bytes -ge 1000000000 ]]; then
-        value=$(echo "scale=2; $bytes / 1000000000" | bc 2>/dev/null || echo "$((bytes / 1000000000))")
-        unit="GB"
-    elif [[ $bytes -ge 1000000 ]]; then
-        value=$(echo "scale=2; $bytes / 1000000" | bc 2>/dev/null || echo "$((bytes / 1000000))")
-        unit="MB"
-    elif [[ $bytes -ge 1000 ]]; then
-        value=$(echo "scale=2; $bytes / 1000" | bc 2>/dev/null || echo "$((bytes / 1000))")
-        unit="KB"
+    if [[ $bytes -ge 1073741824 ]]; then
+        if command -v bc &> /dev/null; then
+            value=$(echo "scale=2; $bytes / 1073741824" | bc)
+            unit="GiB"
+        else
+            value=$((bytes / 1073741824))
+            unit="GiB"
+        fi
+    elif [[ $bytes -ge 1048576 ]]; then
+        if command -v bc &> /dev/null; then
+            value=$(echo "scale=2; $bytes / 1048576" | bc)
+            unit="MiB"
+        else
+            value=$((bytes / 1048576))
+            unit="MiB"
+        fi
+    elif [[ $bytes -ge 1024 ]]; then
+        if command -v bc &> /dev/null; then
+            value=$(echo "scale=2; $bytes / 1024" | bc)
+            unit="KiB"
+        else
+            value=$((bytes / 1024))
+            unit="KiB"
+        fi
     fi
 
     if [[ "$value" =~ ^([0-9]+)\.([0-9]{1,2})?0*$ ]]; then
@@ -66,7 +81,6 @@ compress_pdf() {
         return 1
     fi
 
-    # Skip if already optimized
     if [[ "$validated_path" == *"$optimized_marker" ]]; then
         return 0
     fi
@@ -77,10 +91,11 @@ compress_pdf() {
         return 1
     }
 
-    # Skip very small files (under 10KB) - they're already optimal
     if [[ $original_size -lt 10240 ]]; then
-        log_info "$log_file" "File already optimal: $(basename "$validated_path") ($(_format_bytes_decimal "$original_size"))"
-        # Mark as optimized by renaming
+        local size_human
+        size_human=$(format_size "$original_size")
+        log_info "$log_file" "File already optimal: $(basename "$validated_path") ($size_human)"
+
         local optimized_file="${validated_path%.pdf}${optimized_marker}"
         if mv "$validated_path" "$optimized_file" 2>/dev/null; then
             log_success "$log_file" "  ✓ Marked as optimized (already small)"
@@ -91,12 +106,13 @@ compress_pdf() {
         fi
     fi
 
-    log_info "$log_file" "Compressing: $(basename "$validated_path") ($(_format_bytes_decimal "$original_size"))"
+    local size_human
+    size_human=$(format_size "$original_size")
+    log_info "$log_file" "Compressing: $(basename "$validated_path") ($size_human)"
 
     local optimized_file="${validated_path%.pdf}${optimized_marker}"
     local temp_output="${optimized_file}.tmp.$$"
 
-    # Attempt compression
     if gs -sDEVICE="$gs_device" \
           -dPDFSETTINGS=/printer \
           -dCompatibilityLevel=1.7 \
@@ -120,24 +136,23 @@ compress_pdf() {
         local new_size
         new_size=$(get_file_size "$temp_output") || new_size=0
 
-        # Verify output is valid
         if [[ $new_size -lt $min_valid_size ]]; then
-            log_error "$log_file" "  ✗ Compressed file too small ($(_format_bytes_decimal "$new_size"))"
+            local new_size_human
+            new_size_human=$(format_size "$new_size")
+            log_error "$log_file" "  ✗ Compressed file too small ($new_size_human)"
             rm -f "$temp_output"
             log_error "$log_file" "  → Keeping original file"
             return 1
         fi
 
-        # Check if compression actually reduced size
         if [[ $new_size -gt 0 ]] && [[ $new_size -lt $original_size ]]; then
             local percent
             percent=$(calculate_percentage "$original_size" "$new_size")
 
             local reduction=$((original_size - new_size))
             local reduction_human
-            reduction_human=$(_format_bytes_decimal "$reduction")
+            reduction_human=$(format_size "$reduction")
 
-            # Replace original with compressed version
             if mv "$temp_output" "$optimized_file" 2>/dev/null; then
                 rm -f "$validated_path" 2>/dev/null || true
                 log_success "$log_file" "  ✓ Optimized: ${percent}% reduction (saved ${reduction_human})"
@@ -148,9 +163,11 @@ compress_pdf() {
                 return 1
             fi
         else
-            # No size reduction - rename original to .optimized.pdf
             rm -f "$temp_output"
-            log_info "$log_file" "  → No size reduction achieved ($(_format_bytes_decimal "$new_size") vs $(_format_bytes_decimal "$original_size"))"
+            local orig_human new_human
+            orig_human=$(format_size "$original_size")
+            new_human=$(format_size "$new_size")
+            log_info "$log_file" "  → No size reduction achieved ($new_human vs $orig_human)"
             if mv "$validated_path" "$optimized_file" 2>/dev/null; then
                 log_success "$log_file" "  ✓ Marked as optimized (already at optimal size)"
                 return 0
@@ -160,7 +177,6 @@ compress_pdf() {
             fi
         fi
     else
-        # COMPRESSION FAILED - keep original
         log_warning "$log_file" "  ✗ Compression failed for: $(basename "$validated_path")"
         rm -f "$temp_output"
         log_info "$log_file" "  → Keeping original file intact (will retry next run)"
@@ -197,7 +213,6 @@ compress_drive_pdfs() {
     local failed=0
     local total_size_saved=0
 
-    # Find all PDFs that haven't been optimized yet
     local -a pdf_files=()
     while IFS= read -r -d '' file; do
         if [[ "$file" == *"$optimized_marker" ]]; then
@@ -224,9 +239,7 @@ compress_drive_pdfs() {
                         "$min_valid_size" "$file" "${allowed_paths[@]}"; then
             local optimized_file="${file%.pdf}${optimized_marker}"
             if [[ -f "$optimized_file" ]]; then
-                # Check if it was actually compressed or just marked
                 if [[ ! -f "$file" ]]; then
-                    # Original was removed, so it was compressed
                     ((compressed++)) || true
                     local new_size
                     new_size=$(get_file_size "$optimized_file" 2>/dev/null) || new_size=0
@@ -234,7 +247,6 @@ compress_drive_pdfs() {
                         total_size_saved=$((total_size_saved + orig_size - new_size))
                     fi
                 else
-                    # Original still exists? Actually should not happen
                     ((marked_optimal++)) || true
                 fi
             fi
@@ -254,7 +266,7 @@ compress_drive_pdfs() {
 
     if [[ $total_size_saved -gt 0 ]]; then
         local saved_human
-        saved_human=$(_format_bytes_decimal "$total_size_saved")
+        saved_human=$(format_size "$total_size_saved")
         log_info "$log_file" "  Total space saved: $saved_human"
     fi
 

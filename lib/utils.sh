@@ -87,3 +87,49 @@ get_file_size() {
         echo "0"; return 1
     fi
 }
+
+#=============================================================================
+# Size Formatting (decimal units)
+#=============================================================================
+
+format_bytes_decimal() {
+    local bytes="$1"
+    local unit="B"
+    local value="$bytes"
+
+    if [[ $bytes -ge 1000000000 ]]; then
+        if command -v bc &> /dev/null; then
+            value=$(echo "scale=2; $bytes / 1000000000" | bc)
+            unit="GB"
+        else
+            value=$((bytes / 1000000000))
+            unit="GB"
+        fi
+    elif [[ $bytes -ge 1000000 ]]; then
+        if command -v bc &> /dev/null; then
+            value=$(echo "scale=2; $bytes / 1000000" | bc)
+            unit="MB"
+        else
+            value=$((bytes / 1000000))
+            unit="MB"
+        fi
+    elif [[ $bytes -ge 1000 ]]; then
+        if command -v bc &> /dev/null; then
+            value=$(echo "scale=2; $bytes / 1000" | bc)
+            unit="KB"
+        else
+            value=$((bytes / 1000))
+            unit="KB"
+        fi
+    fi
+
+    # Remove trailing zeros if present
+    if [[ "$value" =~ ^([0-9]+)\.([0-9]{1,2})?0*$ ]]; then
+        value="${BASH_REMATCH[1]}"
+        if [[ -n "${BASH_REMATCH[2]}" ]]; then
+            value="${value}.${BASH_REMATCH[2]}"
+        fi
+    fi
+
+    echo "${value} ${unit}"
+}
